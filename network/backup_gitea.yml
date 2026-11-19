@@ -55,8 +55,8 @@
     backup_gitea_backup_dir: /tmp/network_backups
     backup_gitea_os_directories:
       cisco.ios.ios: ios
-      # juniper.device.junos: junos
-      # arista.eos.eos: eos
+      juniper.device.junos: junos
+      arista.eos.eos: eos
     backup_gitea_source_branch: "{{ gitea_branch_source | default('') }}"
     # Set backup_gitea_branch to reuse a known branch name.  The default makes
     # every backup run an immutable, timestamped snapshot.
