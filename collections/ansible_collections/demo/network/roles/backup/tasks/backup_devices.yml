@@ -1,0 +1,32 @@
+---
+- name: Wait for device SSH
+  delegate_to: localhost
+  ansible.builtin.wait_for:
+    host: "{{ ansible_host }}"
+    port: "{{ ansible_port }}"
+    search_regex: SSH
+    timeout: 600
+
+- name: Back up IOS configuration
+  when: ansible_network_os == 'cisco.ios.ios'
+  cisco.ios.ios_config:
+    backup: true
+    backup_options:
+      dir_path: "{{ backup_gitea_backup_dir }}"
+      filename: "{{ inventory_hostname }}.cfg"
+
+# - name: Back up Junos configuration
+#   when: ansible_network_os == 'juniper.device.junos'
+#   juniper.device.junos_config:
+#     backup: true
+#     backup_options:
+#       dir_path: "{{ backup_gitea_backup_dir }}"
+#       filename: "{{ inventory_hostname }}.cfg"
+
+# - name: Back up EOS configuration
+#   when: ansible_network_os == 'arista.eos.eos'
+#   arista.eos.eos_config:
+#     backup: true
+#     backup_options:
+#       dir_path: "{{ backup_gitea_backup_dir }}"
+#       filename: "{{ inventory_hostname }}.cfg"

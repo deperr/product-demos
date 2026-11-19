@@ -1,0 +1,171 @@
+---
+# Attach the "Gitea" Controller credential created by
+# infrastructure/gitea/provision_gitea.yml. Its injector supplies gitea_host,
+# gitea_port, gitea_token, gitea_owner, and gitea_repo.
+- name: Require the Gitea credential injected by Provision Gitea
+  ansible.builtin.assert:
+    that:
+      - gitea_host | default('') | length > 0
+      - gitea_host | default('') != 'REPLACEME'
+      - gitea_token | default('') | length > 0
+      - gitea_token | default('') not in ['REPLACEME', 'replace_me']
+      - backup_gitea_owner | length > 0
+      - backup_gitea_repo | length > 0
+    fail_msg: >-
+      Attach the Gitea Controller credential created by Infrastructure | AWS -
+      Provision Gitea. It injects the host, token, owner, and repo required to
+      publish backups.
+
+- name: Check Gitea server health
+  register: backup_gitea_health
+  failed_when: false
+  ansible.builtin.uri:
+    url: "{{ backup_gitea_api_base }}/version"
+    method: GET
+    status_code: [200]
+    validate_certs: false
+
+- name: Assert Gitea server is available
+  ansible.builtin.assert:
+    that:
+      - backup_gitea_health.status | default(0) | int == 200
+    fail_msg: >-
+      Gitea at {{ backup_gitea_api_base }} did not respond successfully (HTTP
+      {{ backup_gitea_health.status | default('no response') }}):
+      {{ backup_gitea_health.msg | default('no error details returned') }}.
+      Run infrastructure/gitea/provision_gitea.yml to provision or restore the
+      Gitea server, then retry this backup.
+
+- name: Check whether the network backups repository exists
+  register: backup_gitea_repository_lookup
+  no_log: true
+  ansible.builtin.uri:
+    url: "{{ backup_gitea_api_base }}/repos/{{ backup_gitea_owner }}/{{ backup_gitea_repo }}"
+    method: GET
+    headers:
+      Authorization: "token {{ gitea_token }}"
+    status_code: [200, 404]
+    validate_certs: false
+
+- name: Create the network backups repository when missing
+  when: backup_gitea_repository_lookup.status == 404
+  no_log: true
+  ansible.builtin.uri:
+    url: "{{ backup_gitea_api_base }}/user/repos"
+    method: POST
+    headers:
+      Authorization: "token {{ gitea_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      name: "{{ backup_gitea_repo }}"
+      description: Network device configuration backups
+      private: false
+      auto_init: true
+      default_branch: main
+    status_code: [201]
+    validate_certs: false
+
+- name: Read the network backups repository metadata
+  register: backup_gitea_repository
+  no_log: true
+  ansible.builtin.uri:
+    url: "{{ backup_gitea_api_base }}/repos/{{ backup_gitea_owner }}/{{ backup_gitea_repo }}"
+    method: GET
+    headers:
+      Authorization: "token {{ gitea_token }}"
+    status_code: [200]
+    validate_certs: false
+
+- name: Select the branch from which to create the backup branch
+  ansible.builtin.set_fact:
+    backup_gitea_base_branch: >-
+      {{ backup_gitea_source_branch | default(backup_gitea_repository.json.default_branch, true) }}
+
+- name: Create the Gitea branch for this backup
+  register: backup_gitea_branch_create
+  changed_when: backup_gitea_branch_create.status == 201
+  no_log: true
+  ansible.builtin.uri:
+    url: "{{ backup_gitea_api_base }}/repos/{{ backup_gitea_owner }}/{{ backup_gitea_repo }}/branches"
+    method: POST
+    headers:
+      Authorization: "token {{ gitea_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      new_branch_name: "{{ backup_gitea_branch }}"
+      old_ref_name: "{{ backup_gitea_base_branch }}"
+    status_code: [201, 409]
+    validate_certs: false
+
+- name: Verify all selected devices have a supported OS directory
+  loop: "{{ groups[_hosts | default('containerlab')] | default([]) }}"
+  loop_control:
+    label: "{{ item }}"
+  ansible.builtin.assert:
+    that:
+      - hostvars[item].ansible_network_os | default('') in backup_gitea_os_directories
+    fail_msg: >-
+      {{ item }} uses {{ hostvars[item].ansible_network_os | default('an unspecified network OS') }};
+      add its backup module and Gitea directory mapping before publishing it.
+
+- name: Publish device backups to the Gitea branch
+  loop: "{{ groups[_hosts | default('containerlab')] | default([]) }}"
+  loop_control:
+    label: "{{ item }}"
+  register: backup_gitea_publish_results
+  failed_when: false
+  no_log: true
+  ansible.builtin.uri:
+    url: >-
+      {{ backup_gitea_api_base }}/repos/{{ backup_gitea_owner }}/{{ backup_gitea_repo }}/contents/{{ backup_gitea_os_directories[hostvars[item].ansible_network_os] }}/{{ item }}.cfg
+    method: POST
+    headers:
+      Authorization: "token {{ gitea_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      branch: "{{ backup_gitea_branch }}"
+      message: "Back up {{ item }} configuration"
+      content: "{{ lookup('file', backup_gitea_backup_dir ~ '/' ~ item ~ '.cfg') | b64encode }}"
+    status_code: [201]
+    validate_certs: false
+
+- name: Collect safe Gitea publish diagnostics
+  loop: "{{ backup_gitea_publish_results.results | default([]) }}"
+  loop_control:
+    loop_var: backup_gitea_publish_result
+    label: "{{ backup_gitea_publish_result.item | default('unknown device') }}"
+  ansible.builtin.set_fact:
+    backup_gitea_publish_diagnostics: >-
+      {{
+        backup_gitea_publish_diagnostics
+        + [
+          {
+            'device': backup_gitea_publish_result.item | default('unknown device'),
+            'status': backup_gitea_publish_result.status | default(0) | int,
+            'message': backup_gitea_publish_result.json.message
+              | default(backup_gitea_publish_result.msg | default('no error details returned'))
+          }
+        ]
+      }}
+
+- name: Confirm device backups were published to Gitea
+  loop: "{{ backup_gitea_publish_diagnostics }}"
+  loop_control:
+    loop_var: backup_gitea_publish_diagnostic
+    label: "{{ backup_gitea_publish_diagnostic.device }}"
+  ansible.builtin.assert:
+    that:
+      - backup_gitea_publish_diagnostic.status == 201
+    fail_msg: >-
+      Gitea rejected the backup for {{ backup_gitea_publish_diagnostic.device }}
+      (HTTP {{ backup_gitea_publish_diagnostic.status }}):
+      {{ backup_gitea_publish_diagnostic.message }}
+
+- name: Display the Gitea backup branch
+  ansible.builtin.debug:
+    msg: >-
+      Published network configuration backups to {{ backup_gitea_owner }}/{{ backup_gitea_repo }}
+      branch {{ backup_gitea_branch }}.
