@@ -62,7 +62,7 @@
     backup_gitea_source_branch: "{{ gitea_branch_source | default('') }}"
     # Set backup_gitea_branch to reuse a known branch name. The default makes
     # every backup run an immutable, timestamped snapshot.
-    backup_gitea_branch: "{{ now(utc=true, fmt='%Y%m%d%H%M') }}"
+    backup_gitea_branch: "{{ 'network-backup-' ~ now(utc=true, fmt='%Y%m%d%H%M') }}"
     backup_gitea_api_base: >-
       {{ backup_gitea_scheme }}://{{ gitea_host | default('') }}:{{ backup_gitea_port }}/api/v1
 
