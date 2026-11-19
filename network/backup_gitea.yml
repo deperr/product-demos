@@ -81,6 +81,26 @@
           AWS - Provision Gitea. It injects the host, token, owner, and repo
           required to publish backups.
 
+    - name: Check Gitea server health
+      register: backup_gitea_health
+      failed_when: false
+      ansible.builtin.uri:
+        url: "{{ backup_gitea_api_base }}/version"
+        method: GET
+        status_code: [200]
+        validate_certs: false
+
+    - name: Assert Gitea server is available
+      ansible.builtin.assert:
+        that:
+          - backup_gitea_health.status | default(0) | int == 200
+        fail_msg: >-
+          Gitea at {{ backup_gitea_api_base }} did not respond successfully
+          (HTTP {{ backup_gitea_health.status | default('no response') }}):
+          {{ backup_gitea_health.msg | default('no error details returned') }}.
+          Run infrastructure/gitea/provision_gitea.yml to provision or restore
+          the Gitea server, then retry this backup.
+
     - name: Check whether the network backups repository exists
       register: backup_gitea_repository_lookup
       no_log: true
