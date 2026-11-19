@@ -58,6 +58,76 @@
       {{ backup_gitea_owner }}/{{ backup_gitea_repo }}. Choose an existing
       network-backup-YYYYMMDDHHMM branch and retry.
 
+- name: Retrieve the backup manifest from Gitea
+  run_once: true
+  delegate_to: localhost
+  register: backup_restore_manifest_response
+  failed_when: false
+  no_log: true
+  ansible.builtin.uri:
+    url: >-
+      {{ backup_gitea_api_base }}/repos/{{ backup_gitea_owner }}/{{ backup_gitea_repo }}/contents/manifest.yml?ref={{ backup_restore_branch | urlencode }}
+    method: GET
+    headers:
+      Authorization: "token {{ gitea_token }}"
+    status_code: [200]
+    validate_certs: false
+
+- name: Require a manifest for the selected backup
+  run_once: true
+  ansible.builtin.assert:
+    that:
+      - backup_restore_manifest_response.status | default(0) | int == 200
+      - backup_restore_manifest_response.json.content | default('') | length > 0
+    fail_msg: >-
+      Could not read manifest.yml on {{ backup_restore_branch }}
+      (HTTP {{ backup_restore_manifest_response.status | default('no response') }}).
+      Select a completed backup branch that contains a manifest.
+
+- name: Parse and verify the backup manifest
+  run_once: true
+  block:
+    - name: Parse manifest metadata
+      no_log: true
+      ansible.builtin.set_fact:
+        backup_restore_manifest: "{{ backup_restore_manifest_response.json.content | b64decode | from_yaml }}"
+
+    - name: Validate manifest identity and device list
+      ansible.builtin.assert:
+        that:
+          - backup_restore_manifest is mapping
+          - backup_restore_manifest.backup is defined and backup_restore_manifest.backup is mapping
+          - backup_restore_manifest.backup.branch | default('') == backup_restore_branch
+          - backup_restore_manifest.backup.repository | default('') == backup_gitea_owner ~ '/' ~ backup_gitea_repo
+          - backup_restore_manifest.devices is defined and (backup_restore_manifest.devices | type_debug) == 'list'
+          - backup_restore_manifest.devices | length > 0
+  rescue:
+    - name: Report an invalid backup manifest
+      ansible.builtin.fail:
+        msg: "manifest.yml is malformed or does not describe {{ backup_restore_branch }} in this repository."
+
+- name: Require a supported restore platform
+  ansible.builtin.assert:
+    that:
+      - ansible_network_os | default('') in backup_gitea_os_directories
+    fail_msg: "No backup directory is configured for {{ inventory_hostname }}."
+
+- name: Find this device's entry in the manifest
+  ansible.builtin.set_fact:
+    backup_restore_manifest_entries: >-
+      {{ backup_restore_manifest.devices | selectattr('name', 'defined')
+         | selectattr('name', 'equalto', inventory_hostname) | list }}
+    backup_restore_expected_os: "{{ backup_gitea_os_directories[ansible_network_os] }}"
+
+- name: Validate this device's manifest entry
+  ansible.builtin.assert:
+    that:
+      - backup_restore_manifest_entries | length == 1
+      - backup_restore_manifest_entries[0].os | default('') == backup_restore_expected_os
+      - backup_restore_manifest_entries[0].path | default('') == backup_restore_expected_os ~ '/' ~ inventory_hostname ~ '.cfg'
+      - backup_restore_manifest_entries[0].sha256 | default('') is match('^[a-f0-9]{64}$')
+    fail_msg: "Manifest entry for {{ inventory_hostname }} is missing, duplicated, or invalid."
+
 - name: Create the local restore staging directory
   run_once: true
   delegate_to: localhost
@@ -86,6 +156,21 @@
     content: "{{ backup_restore_file.json.content | b64decode }}"
     dest: "{{ backup_restore_dir }}/{{ backup_restore_branch }}/{{ inventory_hostname }}.cfg"
     mode: "0600"
+
+- name: Calculate the staged configuration checksum
+  delegate_to: localhost
+  register: backup_restore_staged_file
+  ansible.builtin.stat:
+    path: "{{ backup_restore_dir }}/{{ backup_restore_branch }}/{{ inventory_hostname }}.cfg"
+    checksum_algorithm: sha256
+    get_attributes: false
+    get_mime: false
+
+- name: Verify the staged configuration matches the manifest
+  ansible.builtin.assert:
+    that:
+      - backup_restore_staged_file.stat.checksum | default('') == backup_restore_manifest_entries[0].sha256
+    fail_msg: "SHA-256 mismatch for {{ inventory_hostname }} on {{ backup_restore_branch }}."
 
 - name: Restore IOS configuration from the selected backup
   when: ansible_network_os == 'cisco.ios.ios'

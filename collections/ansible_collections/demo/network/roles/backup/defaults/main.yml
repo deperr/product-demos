@@ -10,8 +10,7 @@ backup_gitea_os_directories:
   arista.eos.eos: eos
 backup_gitea_publish_diagnostics: []
 backup_gitea_source_branch: "{{ gitea_branch_source | default('') }}"
-# Set backup_gitea_branch to reuse a known branch name. The default makes every
-# backup run an immutable, timestamped snapshot.
+# Override backup_gitea_branch to create a snapshot with a specific name.
 backup_gitea_branch: "{{ 'network-backup-' ~ now(utc=true, fmt='%Y%m%d%H%M') }}"
 backup_gitea_api_base: >-
   {{ backup_gitea_scheme }}://{{ gitea_host | default('') }}:{{ backup_gitea_port }}/api/v1

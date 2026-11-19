@@ -3,6 +3,8 @@
 - name: Restore Containerlab device configurations from Gitea
   hosts: "{{ _hosts | default('containerlab') }}"
   gather_facts: false
+  strategy: linear
+  any_errors_fatal: true
 
   tasks:
 

@@ -1,0 +1,17 @@
+---
+backup:
+  branch: {{ backup_gitea_snapshot_branch | to_json }}
+  created_at: {{ backup_gitea_snapshot_created_at | to_json }}
+  source_branch: {{ backup_gitea_base_branch | to_json }}
+  repository: {{ (backup_gitea_owner ~ '/' ~ backup_gitea_repo) | to_json }}
+{% if awx_job_id is defined or tower_job_id is defined %}
+  aap_job_id: {{ (awx_job_id | default(tower_job_id) | string) | to_json }}
+{% endif %}
+devices:
+{% for file in backup_gitea_backup_files.results %}
+{% set platform = backup_gitea_os_directories[hostvars[file.item].ansible_network_os] %}
+  - name: {{ file.item | to_json }}
+    os: {{ platform | to_json }}
+    path: {{ (platform ~ '/' ~ file.item ~ '.cfg') | to_json }}
+    sha256: {{ file.stat.checksum | to_json }}
+{% endfor %}
