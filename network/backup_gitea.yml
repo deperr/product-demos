@@ -27,7 +27,7 @@
 
     - name: Back up Junos configuration
       when: ansible_network_os == 'juniper.device.junos'
-      junipernetworks.junos.junos_config:
+      juniper.device.junos_config:
         backup: true
         backup_options:
           dir_path: "{{ backup_gitea_backup_dir }}"
