@@ -110,6 +110,28 @@
       {{ item }} uses {{ hostvars[item].ansible_network_os | default('an unspecified network OS') }};
       add its backup module and Gitea directory mapping before publishing it.
 
+- name: Check that each selected device produced a backup file
+  loop: "{{ groups[_hosts | default('containerlab')] | default([]) }}"
+  loop_control:
+    label: "{{ item }}"
+  register: backup_gitea_backup_files
+  ansible.builtin.stat:
+    path: "{{ backup_gitea_backup_dir }}/{{ item }}.cfg"
+
+- name: Assert each selected device has a backup file
+  loop: "{{ backup_gitea_backup_files.results | default([]) }}"
+  loop_control:
+    loop_var: backup_gitea_backup_file
+    label: "{{ backup_gitea_backup_file.item }}"
+  ansible.builtin.assert:
+    that:
+      - backup_gitea_backup_file.stat.exists
+    fail_msg: >-
+      No backup file was created for {{ backup_gitea_backup_file.item }} at
+      {{ backup_gitea_backup_dir }}/{{ backup_gitea_backup_file.item }}.cfg.
+      Enable its platform backup task, or select only devices with active backup
+      tasks (for example, _hosts=clab_ios).
+
 - name: Publish device backups to the Gitea branch
   loop: "{{ groups[_hosts | default('containerlab')] | default([]) }}"
   loop_control:
