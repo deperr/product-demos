@@ -145,7 +145,8 @@
         validate_certs: false
 
     - name: Verify all selected devices have a supported OS directory
-      loop: "{{ groups[_hosts | default('containerlab')] | default([]) }}"
+      # loop: "{{ groups[_hosts | default('containerlab')] | default([]) }}"
+      loop: "{{ groups[_hosts | default('clab_ios')] | default([]) }}"
       loop_control:
         label: "{{ item }}"
       ansible.builtin.assert:
@@ -156,7 +157,8 @@
           add its backup module and Gitea directory mapping before publishing it.
 
     - name: Publish device backups to the Gitea branch
-      loop: "{{ groups[_hosts | default('containerlab')] | default([]) }}"
+      # loop: "{{ groups[_hosts | default('containerlab')] | default([]) }}"
+      loop: "{{ groups[_hosts | default('clab_ios')] | default([]) }}"
       loop_control:
         label: "{{ item }}"
       register: backup_gitea_publish_results
