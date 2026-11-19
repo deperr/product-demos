@@ -66,7 +66,6 @@
 
   tasks:
     - name: Require the Gitea credential injected by Provision Gitea
-      no_log: true
       ansible.builtin.assert:
         that:
           - gitea_host | default('') | length > 0
