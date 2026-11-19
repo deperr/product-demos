@@ -157,6 +157,8 @@
       loop: "{{ groups[_hosts | default('containerlab')] | default([]) }}"
       loop_control:
         label: "{{ item }}"
+      register: backup_gitea_publish_results
+      failed_when: false
       no_log: true
       ansible.builtin.uri:
         url: >-
@@ -172,6 +174,20 @@
           content: "{{ lookup('file', backup_gitea_backup_dir ~ '/' ~ item ~ '.cfg') | b64encode }}"
         status_code: [201]
         validate_certs: false
+
+    - name: Verify device backups were published to Gitea
+      loop: "{{ backup_gitea_publish_results.results | default([]) }}"
+      loop_control:
+        loop_var: backup_gitea_publish_result
+        label: "{{ backup_gitea_publish_result.item | default('unknown device') }}"
+      ansible.builtin.assert:
+        that:
+          - backup_gitea_publish_result.status | default(0) | int == 201
+        fail_msg: >-
+          Gitea rejected the backup for {{ backup_gitea_publish_result.item | default('an unknown device') }}
+          (HTTP {{ backup_gitea_publish_result.status | default('no response') }}):
+          {{ backup_gitea_publish_result.json.message
+             | default(backup_gitea_publish_result.msg | default('no error details returned')) }}
 
     - name: Display the Gitea backup branch
       ansible.builtin.debug:
