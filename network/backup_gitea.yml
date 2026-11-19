@@ -25,13 +25,13 @@
           dir_path: "{{ backup_gitea_backup_dir }}"
           filename: "{{ inventory_hostname }}.cfg"
 
-    - name: Back up Junos configuration
-      when: ansible_network_os == 'juniper.device.junos'
-      juniper.device.junos_config:
-        backup: true
-        backup_options:
-          dir_path: "{{ backup_gitea_backup_dir }}"
-          filename: "{{ inventory_hostname }}.cfg"
+    # - name: Back up Junos configuration
+    #   when: ansible_network_os == 'juniper.device.junos'
+    #   juniper.device.junos_config:
+    #     backup: true
+    #     backup_options:
+    #       dir_path: "{{ backup_gitea_backup_dir }}"
+    #       filename: "{{ inventory_hostname }}.cfg"
 
     - name: Back up EOS configuration
       when: ansible_network_os == 'arista.eos.eos'
@@ -55,7 +55,7 @@
     backup_gitea_backup_dir: /tmp/network_backups
     backup_gitea_os_directories:
       cisco.ios.ios: ios
-      juniper.device.junos: junos
+      # juniper.device.junos: junos
       arista.eos.eos: eos
     backup_gitea_source_branch: "{{ gitea_branch_source | default('') }}"
     # Set backup_gitea_branch to reuse a known branch name.  The default makes
