@@ -1,0 +1,12 @@
+---
+
+- name: Restore Containerlab device configurations from Gitea
+  hosts: "{{ _hosts | default('containerlab') }}"
+  gather_facts: false
+
+  tasks:
+
+    - name: Restore device configurations from the backup role
+      ansible.builtin.include_role:
+        name: demo.network.backup
+        tasks_from: restore_devices

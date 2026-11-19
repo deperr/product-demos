@@ -563,6 +563,49 @@ controller_templates:
     notification_templates_success: Telemetry
     notification_templates_error: Telemetry
 
+  - name: "NETWORK | Restore from Gitea Backup"
+    description: Restore selected Containerlab device configurations from a Gitea backup branch
+    labels:
+      - containerlab
+      - network
+      - restore
+    job_type: run
+    organization: Ansible Product Demos (APD)
+    inventory: ContainerLab Inventory
+    project: "Ansible Product Demos"
+    playbook: "network/restore_gitea.yml"
+    credentials:
+      - Containerlab Device Access
+      - Gitea
+    notification_templates_started: Telemetry
+    notification_templates_success: Telemetry
+    notification_templates_error: Telemetry
+    survey_enabled: true
+    survey:
+      name: Restore Gitea Network Backup
+      description: Select an immutable backup branch and explicitly confirm the restore.
+      spec:
+        - question_name: Backup branch
+          question_description: Enter a branch such as network-backup-YYYYMMDDHHMM.
+          type: text
+          variable: backup_restore_branch
+          required: true
+        - question_name: Devices to restore
+          type: multiplechoice
+          variable: _hosts
+          default: containerlab
+          required: true
+          choices:
+            - containerlab
+            - clab_ios
+            - clab_junos
+            - clab_eos
+        - question_name: Restore confirmation
+          question_description: Type RESTORE to apply the selected backup to devices.
+          type: text
+          variable: backup_restore_confirmation
+          required: true
+
   - name: "NETWORK | Staging"
     job_type: run
     organization: Ansible Product Demos (APD)

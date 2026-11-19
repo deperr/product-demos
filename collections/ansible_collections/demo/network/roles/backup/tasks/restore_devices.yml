@@ -1,0 +1,107 @@
+---
+- name: Require explicit restore confirmation
+  run_once: true
+  delegate_to: localhost
+  ansible.builtin.assert:
+    that:
+      - backup_restore_confirmation == 'RESTORE'
+    fail_msg: >-
+      Restore is destructive. Set backup_restore_confirmation to RESTORE in the
+      launch survey before retrying.
+
+- name: Require a Gitea backup branch name
+  run_once: true
+  delegate_to: localhost
+  ansible.builtin.assert:
+    that:
+      - backup_restore_branch | length > 0
+      - backup_restore_branch is match('^network-backup-[0-9]{12}$')
+    fail_msg: >-
+      Provide a backup branch in network-backup-YYYYMMDDHHMM format.
+
+- name: Require the Gitea credential injected by Provision Gitea
+  run_once: true
+  delegate_to: localhost
+  ansible.builtin.assert:
+    that:
+      - gitea_host | default('') | length > 0
+      - gitea_host | default('') != 'REPLACEME'
+      - gitea_token | default('') | length > 0
+      - gitea_token | default('') not in ['REPLACEME', 'replace_me']
+    fail_msg: >-
+      Attach the Gitea Controller credential created by Infrastructure | AWS -
+      Provision Gitea before restoring a backup.
+
+- name: Check that the requested Gitea backup branch exists
+  run_once: true
+  delegate_to: localhost
+  register: backup_restore_branch_result
+  failed_when: false
+  no_log: true
+  ansible.builtin.uri:
+    url: >-
+      {{ backup_gitea_api_base }}/repos/{{ backup_gitea_owner }}/{{ backup_gitea_repo }}/branches/{{ backup_restore_branch | urlencode }}
+    method: GET
+    headers:
+      Authorization: "token {{ gitea_token }}"
+    status_code: [200]
+    validate_certs: false
+
+- name: Assert the requested Gitea backup branch exists
+  run_once: true
+  delegate_to: localhost
+  ansible.builtin.assert:
+    that:
+      - backup_restore_branch_result.status | default(0) | int == 200
+    fail_msg: >-
+      Gitea branch {{ backup_restore_branch }} was not found in
+      {{ backup_gitea_owner }}/{{ backup_gitea_repo }}. Choose an existing
+      network-backup-YYYYMMDDHHMM branch and retry.
+
+- name: Create the local restore staging directory
+  run_once: true
+  delegate_to: localhost
+  ansible.builtin.file:
+    path: "{{ backup_restore_dir }}/{{ backup_restore_branch }}"
+    state: directory
+    mode: "0700"
+
+- name: Retrieve this device configuration from Gitea
+  delegate_to: localhost
+  register: backup_restore_file
+  no_log: true
+  ansible.builtin.uri:
+    url: >-
+      {{ backup_gitea_api_base }}/repos/{{ backup_gitea_owner }}/{{ backup_gitea_repo }}/contents/{{ backup_gitea_os_directories[ansible_network_os] }}/{{ inventory_hostname }}.cfg?ref={{ backup_restore_branch | urlencode }}
+    method: GET
+    headers:
+      Authorization: "token {{ gitea_token }}"
+    status_code: [200]
+    validate_certs: false
+
+- name: Stage this device configuration for restore
+  delegate_to: localhost
+  no_log: true
+  ansible.builtin.copy:
+    content: "{{ backup_restore_file.json.content | b64decode }}"
+    dest: "{{ backup_restore_dir }}/{{ backup_restore_branch }}/{{ inventory_hostname }}.cfg"
+    mode: "0600"
+
+- name: Restore IOS configuration from the selected backup
+  when: ansible_network_os == 'cisco.ios.ios'
+  cisco.ios.ios_config:
+    src: "{{ backup_restore_dir }}/{{ backup_restore_branch }}/{{ inventory_hostname }}.cfg"
+
+- name: Restore Junos configuration from the selected backup
+  when: ansible_network_os == 'juniper.device.junos'
+  juniper.device.junos_config:
+    src: "{{ backup_restore_dir }}/{{ backup_restore_branch }}/{{ inventory_hostname }}.cfg"
+    load: merge
+    format: set
+    check: true
+    commit: true
+
+- name: Restore EOS configuration from the selected backup
+  when: ansible_network_os == 'arista.eos.eos'
+  arista.eos.eos_config:
+    src: "{{ backup_restore_dir }}/{{ backup_restore_branch }}/{{ inventory_hostname }}.cfg"
