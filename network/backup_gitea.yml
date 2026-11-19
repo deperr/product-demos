@@ -57,6 +57,7 @@
       cisco.ios.ios: ios
       juniper.device.junos: junos
       arista.eos.eos: eos
+    backup_gitea_publish_diagnostics: []
     backup_gitea_source_branch: "{{ gitea_branch_source | default('') }}"
     # Set backup_gitea_branch to reuse a known branch name.  The default makes
     # every backup run an immutable, timestamped snapshot.
@@ -175,19 +176,38 @@
         status_code: [201]
         validate_certs: false
 
-    - name: Verify device backups were published to Gitea
+    - name: Collect safe Gitea publish diagnostics
       loop: "{{ backup_gitea_publish_results.results | default([]) }}"
       loop_control:
         loop_var: backup_gitea_publish_result
         label: "{{ backup_gitea_publish_result.item | default('unknown device') }}"
+      no_log: true
+      ansible.builtin.set_fact:
+        backup_gitea_publish_diagnostics: >-
+          {{
+            backup_gitea_publish_diagnostics
+            + [
+              {
+                'device': backup_gitea_publish_result.item | default('unknown device'),
+                'status': backup_gitea_publish_result.status | default(0) | int,
+                'message': backup_gitea_publish_result.json.message
+                  | default(backup_gitea_publish_result.msg | default('no error details returned'))
+              }
+            ]
+          }}
+
+    - name: Confirm device backups were published to Gitea
+      loop: "{{ backup_gitea_publish_diagnostics }}"
+      loop_control:
+        loop_var: backup_gitea_publish_diagnostic
+        label: "{{ backup_gitea_publish_diagnostic.device }}"
       ansible.builtin.assert:
         that:
-          - backup_gitea_publish_result.status | default(0) | int == 201
+          - backup_gitea_publish_diagnostic.status == 201
         fail_msg: >-
-          Gitea rejected the backup for {{ backup_gitea_publish_result.item | default('an unknown device') }}
-          (HTTP {{ backup_gitea_publish_result.status | default('no response') }}):
-          {{ backup_gitea_publish_result.json.message
-             | default(backup_gitea_publish_result.msg | default('no error details returned')) }}
+          Gitea rejected the backup for {{ backup_gitea_publish_diagnostic.device }}
+          (HTTP {{ backup_gitea_publish_diagnostic.status }}):
+          {{ backup_gitea_publish_diagnostic.message }}
 
     - name: Display the Gitea backup branch
       ansible.builtin.debug:
