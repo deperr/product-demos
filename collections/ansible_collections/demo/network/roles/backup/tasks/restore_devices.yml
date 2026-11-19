@@ -96,10 +96,8 @@
   when: ansible_network_os == 'juniper.device.junos'
   juniper.device.junos_config:
     src: "{{ backup_restore_dir }}/{{ backup_restore_branch }}/{{ inventory_hostname }}.cfg"
-    load: merge
-    format: set
-    check: true
-    commit: true
+    src_format: set
+    update: merge
 
 - name: Restore EOS configuration from the selected backup
   when: ansible_network_os == 'arista.eos.eos'
